@@ -34,11 +34,11 @@ Kind detect_erase_kind(std::string &str) {
   return kind;
 }
 
-uint64_t parse_hex(const std::string &str) {
+uint64_t parse_hex(const std::string& origin, const std::string &copy) {
   bool valid = false;
   uint64_t result = 0;
 
-  for (unsigned char c : str) {
+  for (unsigned char c : copy) {
     // skip separators
     if (c == '\'')
       continue;
@@ -53,132 +53,136 @@ uint64_t parse_hex(const std::string &str) {
       digit = c - 'A' + 10;
     else
       throw std::invalid_argument("Invalid hex digit '" + std::string(1, c) +
-                                  "' in literal '" + str + "'");
+                                  "' in literal '" + origin + "'");
 
     if (result > (UINT64_MAX >> 4))
-      throw std::out_of_range("hex literal out of range");
+      throw std::out_of_range("hex literal overflow: '" + origin + "'");
 
     result = (result << 4) | digit;
     valid = true;
   }
 
   if (!valid)
-    throw std::invalid_argument("Invalid hex literal: '" + str + "'\n");
+    throw std::invalid_argument("Invalid hex literal: '" + origin + "'\n");
 
   return result;
 }
 
-uint64_t parse_dec(const std::string &str) {
+uint64_t parse_dec(const std::string& origin, const std::string &copy) {
   const static size_t base = 10;
 
   bool valid = false;
   uint64_t result = 0;
 
-  for (unsigned char c : str) {
+  for (unsigned char c : copy) {
     // skip separators
     if (c == '\'')
       continue;
 
     if (!std::isdigit(c)) {
       throw std::invalid_argument("Invalid decimal digit '" +
-                                  std::string(1, c) + "' in literal '" + str +
+                                  std::string(1, c) + "' in literal '" + origin +
                                   "'");
     }
 
     int digit = c - '0';
     if (result > (UINT64_MAX - digit) / base)
-      throw std::out_of_range("decimal literal out of range");
+      throw std::out_of_range("decimal literal overflow: '" + origin + "'");
 
     result = (result * base) + digit;
     valid = true;
   }
 
   if (!valid)
-    throw std::invalid_argument("Invalid decimal literal: '" + str + "'\n");
+    throw std::invalid_argument("Invalid decimal literal: '" + origin + "'\n");
 
   return result;
 }
 
-uint64_t parse_oct(const std::string &str) {
+uint64_t parse_oct(const std::string& origin, const std::string &copy) {
   bool valid = false;
   uint64_t result = 0;
 
-  for (unsigned char c : str) {
+  for (unsigned char c : copy) {
     // skip separators
     if (c == '\'')
       continue;
 
     if (c < '0' || c > '7') {
       throw std::invalid_argument("Invalid octal digit '" + std::string(1, c) +
-                                  "' in literal '" + str + "'");
+                                  "' in literal '" + origin + "'");
     }
 
     int digit = c - '0';
     if (result > (UINT64_MAX >> 3))
-      throw std::out_of_range("octal literal out of range");
+      throw std::out_of_range("octal literal overflow: '" + origin + "'");
 
     result = (result << 3) | digit;
     valid = true;
   }
 
   if (!valid)
-    throw std::invalid_argument("Invalid octal literal: '" + str + "'\n");
+    throw std::invalid_argument("Invalid octal literal: '" + origin + "'\n");
 
   return result;
 }
 
-uint64_t parse_bin(const std::string &str) {
+uint64_t parse_bin(const std::string& origin, const std::string &copy) {
   bool valid = false;
   uint64_t result = 0;
 
-  for (unsigned char c : str) {
+  for (unsigned char c : copy) {
     // skip separators
     if (c == '\'')
       continue;
 
     if (c != '0' && c != '1') {
       throw std::invalid_argument("Invalid binary digit '" + std::string(1, c) +
-                                  "' in literal '" + str + "'");
+                                  "' in literal '" + origin + "'");
     }
 
     if (result > (UINT64_MAX >> 1))
-      throw std::out_of_range("binary literal out of range");
+      throw std::out_of_range("binary literal overflow: '" + origin + "'");
 
     result = (result << 1) | (c - '0');
   }
 
   if (!valid)
-    throw std::invalid_argument("Invalid binary literal: '" + str + "'\n");
+    throw std::invalid_argument("Invalid binary literal: '" + origin + "'\n");
 
   return result;
 }
 
-uint64_t parse_integer(std::string str) {
-  Kind kind = detect_erase_kind(str);
-  if (str.length() == 0)
+int64_t parse_integer(const std::string& origin) {
+  std::string copy = origin;
+  Kind kind = detect_erase_kind(copy);
+  if (copy.length() == 0)
     throw std::invalid_argument("error, invalid integer");
 
   // clang-format off
   switch (kind) {
-    case Kind::Decimal: return parse_dec(str);
-    case Kind::Hex:     return parse_hex(str);
-    case Kind::Octal:   return parse_oct(str);
-    case Kind::Binary:  return parse_bin(str);
+    case Kind::Decimal: return parse_dec(origin, copy);
+    case Kind::Hex:     return parse_hex(origin, copy);
+    case Kind::Octal:   return parse_oct(origin, copy);
+    case Kind::Binary:  return parse_bin(origin, copy);
   }
   // clang-format on
 }
 
-long double parse_floating_point(std::string str) {
-  Kind kind = detect_erase_kind(str);
+long double parse_floating_point(const std::string& origin) {
+  std::string copy = origin;
+  Kind kind = detect_erase_kind(copy);
 
-  if (str.length() == 0)
+  if (copy.length() == 0)
     throw std::invalid_argument("error, invalid float literal");
 
   if (kind == Kind::Octal || kind == Kind::Binary)
     throw std::invalid_argument("float literals must be either Hex or Decimal");
 
-  if (kind == Kind::Hex ? !std::isxdigit(str.back()) : !std::isdigit(str.back()))
-    throw std::invalid_argument("Invalid floating point end: '" + std::string(1, str.back()) + "'");
+  if (kind == Kind::Hex ? !std::isxdigit(copy.back())
+                        : !std::isdigit(copy.back()))
+    throw std::invalid_argument("Invalid floating point end: '" +
+                                std::string(1, copy.back()) + "'");
 
   size_t base = kind == Kind::Decimal ? 10 : 16;
   size_t exponent_base = kind == Kind::Decimal ? 10 : 2;
@@ -191,82 +195,66 @@ long double parse_floating_point(std::string str) {
 
   char SN = kind == Kind::Decimal ? 'e' : 'p';
 
-  size_t dotpos = str.find('.');
+  size_t dotpos = copy.find('.');
+  size_t snpos = copy.find(SN);
+  if (snpos == std::string::npos)
+    snpos = copy.find(std::toupper(SN));
 
-  if (dotpos != std::string::npos && dotpos != 0) {
-    std::string intpart = str.substr(0, dotpos);
-
-    size_t snpos = str.find(SN);
-    if (kind == Kind::Decimal)
-      integer = parse_dec(intpart);
-    if (kind == Kind::Hex)
-      integer = parse_hex(intpart);
-
-    std::string fracpart;
-    if (snpos != std::string::npos)
-      fracpart = str.substr(dotpos + 1, snpos);
-    else
-      fracpart = str.substr(dotpos + 1, str.length());
-
-    if (kind == Kind::Decimal)
-      fraction = parse_dec(fracpart);
-    if (kind == Kind::Hex)
-      fraction = parse_hex(fracpart);
-
-    if (snpos != std::string::npos) {
-      bool negative = false;
-      if (snpos == (str.length() - 1))
-        throw std::invalid_argument("Invalid floating point literal, exponent "
-                                    "at the end is not allowed");
-
-      if (str[snpos + 1] == '-' || str[snpos + 1] == '+') {
-        snpos++;
-        negative = str[snpos + 1] == '-';
-      }
-
-      exponent = parse_dec(str.substr(snpos, str.length()));
-      exponent *= (negative) ? -1 : 1;
-    }
-
-    return (integer + (fraction / pow(kind == Kind::Decimal ? 10 : 16,
-                                      fracpart.length()))) *
-           pow(kind == Kind::Decimal ? 10 : 2, exponent);
-  }
-
-  else if (dotpos == std::string::npos)
-    dotpos = 0;
-
-  size_t snpos = str.find(SN);
-
-  std::string fracpart;
-  if (snpos != std::string::npos)
-    fracpart = str.substr(dotpos + 1, snpos);
+  std::string integer_part;
+  if (dotpos == 0)
+    integer_part = "0";
+  else if (dotpos != std::string::npos)
+    integer_part = copy.substr(0, dotpos);
   else
-    fracpart = str.substr(dotpos + 1, str.length());
+    integer_part = copy.substr(0, snpos > 0 ? snpos : copy.length());
 
   if (kind == Kind::Decimal)
-    fraction = parse_dec(fracpart);
+    integer = parse_dec(origin, integer_part);
   if (kind == Kind::Hex)
-    fraction = parse_hex(fracpart);
+    integer = parse_hex(origin, integer_part);
 
-  if (snpos == std::string::npos)
+  // doesn't have fraction or exponent
+  if (dotpos == std::string::npos && snpos == std::string::npos)
+    return integer;
+
+  if (dotpos == std::string::npos)
+    dotpos = 0;
+
+  else if (snpos == std::string::npos)
+    snpos = copy.length();
+
+  std::string fracpart;
+  fracpart = copy.substr(dotpos + 1, snpos - (dotpos + 1));
+
+  if (kind == Kind::Decimal)
+    fraction = parse_dec(origin, fracpart);
+  if (kind == Kind::Hex)
+    fraction = parse_hex(origin, fracpart);
+
+  // doesn't have exponent
+  if (snpos == copy.length())
     return integer + (fraction / pow(base, fracpart.length()));
 
-  if (snpos == (str.length() - 1)) {
+  if (snpos == (copy.length() - 1)) {
     throw std::invalid_argument(
         "Invalid floating point literal, exponent at the end is not allowed");
   }
 
   bool negative = false;
-  if (str[snpos + 1] == '-' || str[snpos + 1] == '+') {
+  if (copy[snpos + 1] == '-' || copy[snpos + 1] == '+') {
     snpos++;
-    negative = str[snpos + 1] == '-';
+    negative = copy[snpos + 1] == '-';
   }
 
-  exponent = parse_dec(str.substr(snpos, str.length()));
+  exponent = parse_dec(origin, copy.substr(snpos + 1, copy.length() - (snpos + 1)));
   exponent *= (negative) ? -1 : 1;
 
-  return (integer + fraction / pow(base, fracpart.length()) * pow(exponent_base, exponent));
+  long double result = (integer + (fraction / pow(base, fracpart.length()))) * pow(exponent_base, exponent);
+
+  if (!std::isfinite(result))
+    throw std::out_of_range("floating point literal overflow: '" + copy + "'");
+
+  return result;
 }
 
 bool valid_integer(std::string str) {
@@ -373,8 +361,20 @@ bool valid_float(std::string str) {
   return true;
 }
 
-int main() {
-  std::string test = "1.265";
+void test_floating_point(std::string test) {
   std::cout << test << ": " << parse_floating_point(test) << '\n';
-  printf("%Lf\n", parse_floating_point(test));
+}
+
+int main() {
+  test_floating_point("1");
+  test_floating_point("1.2");
+  test_floating_point(".2");
+  test_floating_point("0.2");
+  test_floating_point("0");
+
+  test_floating_point("1.2e2");
+
+  test_floating_point("0x0");
+  test_floating_point("0x10");
+  test_floating_point("0x3f99999a");
 }
