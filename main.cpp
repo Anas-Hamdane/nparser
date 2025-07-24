@@ -199,8 +199,7 @@ long double parse_floating_point(const std::string &str) {
   else if (kind == Kind::Octal || kind == Kind::Binary)
     throw std::invalid_argument("float literals must be either Hex or Decimal: " + str);
 
-  else if (kind == Kind::Hex ? !std::isxdigit(str.back())
-                             : !std::isdigit(str.back()))
+  else if (kind == Kind::Hex ? !std::isxdigit(str.back()) : !std::isdigit(str.back()))
     throw std::invalid_argument("Invalid floating point end: " + str);
 
   // scientific notation
@@ -334,71 +333,6 @@ bool valid_integer(std::string str) {
   }
 
   return true;
-}
-
-bool valid_float(std::string str) {
-  enum Kind { Decimal, Hex };
-
-  if (str.empty() || str.find(' ') != std::string::npos)
-    return false;
-
-  Kind kind = Decimal;
-
-  if (starts_with(str, "-") || starts_with(str, "+"))
-    str.erase(0, 1);
-
-  if (starts_with(str, "0x") || starts_with(str, "0X")) {
-    kind = Hex;
-    str.erase(0, 2);
-  }
-
-  if (str.length() == 0)
-    return false;
-
-  char corr_sn = kind == Hex ? 'P' : 'E';
-
-  if (str.back() == '.' || str.back() == corr_sn || str.back() == '-' ||
-      str.back() == '+')
-    return false;
-
-  if (str.front() == corr_sn)
-    return false;
-
-  // has a '.', has a scientific notation E/P
-  bool dot = false;
-  bool sn = false;
-
-  for (size_t i = 0; i < str.length(); ++i) {
-    unsigned char c = (unsigned char)str[i];
-
-    if (c == '.') {
-      if (dot || sn)
-        return false;
-
-      dot = true;
-      continue;
-    }
-
-    if (c == corr_sn) {
-      if (sn || (dot && str[i - 1] == '.'))
-        return false;
-
-      if (i + 1 < str.length() && (str[i + 1] == '-' || str[i + 1] == '+'))
-        i++;
-
-      sn = true;
-      continue;
-    }
-
-    if (kind == Hex ? !isxdigit(c) : !isdigit(c))
-      return false;
-  }
-
-  return true;
-}
-
-void test_floating_point(std::string test) {
-  std::cout << test << ": " << parse_floating_point(test) << '\n';
 }
 
 int main() { std::cout << parse_floating_point("0x") << '\n'; }
