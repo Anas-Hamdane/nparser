@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <string>
 
@@ -19,9 +20,9 @@ bool starts_with(const std::string &str, const std::string &cmp) {
  * Detect the number kind, and erases the part
  * resposible for detection.
  */
-NumKind numkind(const std::string &str) {
+NumKind numkind(const std::string &str, std::string &log) {
   if (str.empty())
-    throw std::invalid_argument("Invalid argument: empty string");
+    log += "Invalid argument: empty string\n";
 
   if (starts_with(str, "0x") || starts_with(str, "0X"))
     return NumKind::Hex;
@@ -32,8 +33,8 @@ NumKind numkind(const std::string &str) {
   else if (starts_with(str, "0b") || starts_with(str, "0B"))
     return NumKind::Binary;
 
-  else if (!std::isdigit(str.front()) && str.front() != '.')
-    throw std::invalid_argument("Invalid number start in: " + str);
+  else if (!str.empty() && !std::isdigit(str.front()) && str.front() != '.')
+    log += "Invalid number start in: " + str + "\n";
 
   return NumKind::Decimal;
 }
@@ -179,7 +180,8 @@ int64_t parse_integer(const std::string &str) {
   if (str.empty())
     throw std::invalid_argument("Invalid argument: empty string");
 
-  NumKind kind = numkind(str);
+  std::string log;
+  NumKind kind = numkind(str, log);
   size_t start = 0;
 
   if (kind != NumKind::Decimal)
@@ -202,7 +204,8 @@ long double parse_floating_point(const std::string &str) {
   if (str.empty())
     throw std::invalid_argument("Invalid floating point literal: empty string");
 
-  NumKind kind = numkind(str);
+  std::string log;
+  NumKind kind = numkind(str, log);
   size_t current_character = (kind != NumKind::Decimal) ? 2 : 0;
 
   if ((str.length() - current_character) == 0)
@@ -360,7 +363,8 @@ long double parse_float(const std::string &str) {
     logger.log(Logger::Level::ERROR,
                "Invalid floating point literal: " + str + "\n");
 
-  NumKind kind = numkind(str);
+  std::string log;
+  NumKind kind = numkind(str, log);
   size_t current_character = (kind != NumKind::Decimal) ? 2 : 0;
 
   if ((str.length() - current_character) == 0)
@@ -479,7 +483,7 @@ long double parse_float(const std::string &str) {
   return result;
 }
 
-long double new_parse_float(const std::string &str) {
+long double parse_float(const std::string &str, std::string &log) {
   enum class Section { Integer, Fraction, Exponent };
 
   long double integer = 0;
@@ -488,68 +492,100 @@ long double new_parse_float(const std::string &str) {
 
   size_t fraction_size = 0;
 
-  NumKind kind = numkind(str);
+  NumKind kind = numkind(str, log);
   char scientific_notation = (kind == NumKind::Hex) ? 'p' : 'e';
-
-  if (kind != NumKind::Decimal && kind != NumKind::Hex)
-    throw std::invalid_argument("Float literals must be either Hex or Decimal");
-
   size_t current_character = (kind == NumKind::Hex) ? 2 : 0;
 
+  if (kind != NumKind::Decimal && kind != NumKind::Hex)
+    log +=
+        "floating point literals must be either Hex or Decimal: " + str + "\n";
+
+  if ((str.length() - current_character) == 0)
+    log += "invalid floating point literal: " + str + "\n";
+
   Section section = Section::Integer;
+  size_t section_size = -1;
+
   bool negative = false;
   uint64_t tmp = 0;
   for (size_t i = current_character; i < str.length(); ++i) {
     unsigned char c = str[i];
 
     if (c == '\'') {
-      if (str[i - 1] == '\'')
-        throw std::invalid_argument("Only one separator alowed at a time");
+      if (i == 0)
+        log +=
+            "separators are not allowed at the begining of a literal: " + str +
+            "\n";
+
+      else if ((kind == NumKind::Hex) ? !std::isxdigit(str[i - 1])
+                                      : !std::isdigit(str[i - 1]))
+        log += "Only one separator at a time is alowed: " + str + "\n";
 
       continue;
     }
 
     if (c == '.') {
       if (section != Section::Integer)
-        throw std::invalid_argument("Invalid Integer section in float literal");
+        log += "Invalid Integer section in float literal: " + str + "\n";
+
+      if (section_size == 0)
+        log += "Invalid float literal, empty sections are not allowed: " + str +
+               "\n";
 
       integer = tmp;
       tmp = 0;
+
       section = Section::Fraction;
+      section_size = 0;
       continue;
     }
 
     if (c == scientific_notation || c == toupper(scientific_notation)) {
       if (section == Section::Exponent)
-        throw std::invalid_argument(
-            "Invalid Exponent Sections in float literal");
+        log += "Invalid Exponent Sections in float literal: " + str + "\n";
 
-      if (section == Section::Fraction)
-        fraction = tmp;
-      else
-        integer = tmp;
+      if (section_size == 0)
+        log += "Invalid float literal, empty sections are not allowed: " + str +
+               "\n";
 
       if (i + 1 >= str.length())
-        throw std::invalid_argument("Float literals can't end with a scientific notation");
+        log += "Float literals can't end with a scientific notation: " + str +
+               "\n";
 
       if (str[i + 1] == '-' || str[i + 1] == '+') {
         negative = (str[i + 1] == '-');
         i++;
       }
 
+      // clang-format off
+          if (section == Section::Fraction) fraction = tmp;
+          else integer = tmp;
+      // clang-format on
       tmp = 0;
+
       section = Section::Exponent;
+      section_size = 0;
       continue;
     }
 
-    if (section == Section::Exponent && !std::isdigit(c))
-      throw std::invalid_argument("Exponent must be a valid decimal");
+    bool found = false;
+    if (section == Section::Exponent && !std::isdigit(c)) {
+      log += "Exponent must be a valid decimal: " + str + "\n";
+      found = true;
+    }
 
-    if (kind == NumKind::Hex && !std::isxdigit(c))
-      throw std::invalid_argument("Invalid digit in hex literal");
+    if (kind == NumKind::Hex && !std::isxdigit(c)) {
+      log += "Invalid digit in hex literal: " + str + "\n";
+      found = true;
+    }
 
-    if (kind == NumKind::Decimal && !std::isdigit(c))
-      throw std::invalid_argument("Invalid digit in decimal literal");
+    if (kind == NumKind::Decimal && !std::isdigit(c)) {
+      log += "Invalid digit in decimal literal: " + str + "\n";
+      found = true;
+    }
+
+    if (found)
+      continue;
 
     size_t digit;
     if (c >= '0' && c <= '9')
@@ -560,7 +596,7 @@ long double new_parse_float(const std::string &str) {
       digit = c - 'A' + 10;
 
     if (tmp > (UINT64_MAX - digit) / (uint64_t)kind)
-      throw std::out_of_range("float literal overflow: '" + str);
+      log += "float literal overflow: " + str + "\n";
 
     if (fraction_size >= FP_FRACTION_MD)
       continue;
@@ -569,25 +605,36 @@ long double new_parse_float(const std::string &str) {
       fraction_size++;
 
     tmp = (tmp * (uint64_t)kind) + digit;
+    section_size++;
   }
 
-  switch (section) {
-    case Section::Integer: integer = tmp; break;
-    case Section::Fraction: fraction = tmp; break;
-    case Section::Exponent: exponent = tmp; break;
-  }
+  if (section_size == 0)
+    log +=
+        "Invalid float literal, empty sections are not allowed: " + str + "\n";
 
-  if (negative) exponent *= -1;
+  // clang-format off
+      switch (section) {
+        case Section::Integer:  integer = tmp;  break;
+        case Section::Fraction: fraction = tmp; break;
+        case Section::Exponent: exponent = tmp; break;
+      }
+  // clang-format on
+
+  if (negative)
+    exponent *= -1;
 
   size_t exponent_base = (kind == NumKind::Hex) ? 2 : 10;
+
   long double result =
-      (integer + (fraction / pow((uint64_t)kind, fraction_size))) // mantissa
-      * pow(exponent_base, exponent);                             // exponent
+      (integer + (fraction / powl((uint64_t)kind, fraction_size))) // mantissa
+      * powl(exponent_base, exponent);                             // exponent
 
   if (!std::isfinite(result))
-    throw std::invalid_argument("float literal overflow");
+    log += "float literal overflow: " + str + "\n";
 
   return result;
 }
 
-int main() { std::cout << "123: " << new_parse_float("123") << '\n'; }
+int main (int argc, char *argv[]) {
+  return 0;
+}
